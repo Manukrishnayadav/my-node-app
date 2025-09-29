@@ -32,10 +32,10 @@ pipeline {
             steps {
                 // CD: push image to Docker Hub
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    bat '''
+                    bat """
                     echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin
                     docker push %IMAGE_NAME%
-                    '''
+                    """
                 }
             }
         }
@@ -43,9 +43,8 @@ pipeline {
         stage('Deploy to EKS') {
             steps {
                 // CD: deploy to Kubernetes (EKS)
-                // Make sure k8s-deployment.yaml uses the same image tag
-                bat "kubectl set image deployment/node-app-deployment node-app=%IMAGE_NAME% --record"
-                bat 'kubectl rollout status deployment/node-app-deployment'
+                bat "kubectl apply -f k8s-deployment.yaml"
+                bat "kubectl rollout status deployment/node-app-deployment"
             }
         }
     }
