@@ -2,11 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds') // Your DockerHub credentials ID
-        DOCKERHUB_REPO = 'manukrishnayadav/my-node-app'        // Docker Hub repo
+        DOCKERHUB_REPO = 'manukrishnayadav/my-node-app'
         AWS_REGION = 'us-east-1'
         CLUSTER_NAME = 'my-eks-cluster'
-        IMAGE_TAG = "${BUILD_NUMBER}"                           // Jenkins build number as image tag
     }
 
     stages {
@@ -25,32 +23,45 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                bat "docker build -t %DOCKERHUB_REPO%:%IMAGE_TAG% ."
+                bat "docker build -t %DOCKERHUB_REPO%:%BUILD_NUMBER% ."
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
                 withDockerRegistry([credentialsId: 'dockerhub-creds', url: '']) {
-                    bat "docker push %DOCKERHUB_REPO%:%IMAGE_TAG%"
+                    bat "docker push %DOCKERHUB_REPO%:%BUILD_NUMBER%"
                 }
             }
         }
 
-        stage('Configure Kubeconfig') {
+        stage('Configure AWS Credentials') {
             steps {
-                bat "aws eks update-kubeconfig --name %CLUSTER_NAME% --region %AWS_REGION%"
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    bat "aws eks update-kubeconfig --name %CLUSTER_NAME% --region %AWS_REGION%"
+                }
             }
         }
 
-        stage('Update Deployment YAML and Deploy to EKS') {
+        stage('Deploy to EKS') {
             steps {
-                // Replace the image in k8s-deployment.yaml dynamically
                 bat """
-                powershell -Command "(Get-Content k8s-deployment.yaml) -replace 'image:.*', 'image: %DOCKERHUB_REPO%:%IMAGE_TAG%' | Set-Content k8s-deployment.yaml"
-                kubectl apply -f k8s-deployment.yaml
+                    kubectl set image deployment/my-node-app my-node-app=%DOCKERHUB_REPO%:%BUILD_NUMBER% --record || \
+                    kubectl apply -f k8s-deployment.yaml
                 """
             }
+        }
+    }
+    
+    post {
+        failure {
+            echo 'Pipeline failed. Check the logs for errors.'
+        }
+        success {
+            echo 'Pipeline completed successfully!'
         }
     }
 }
