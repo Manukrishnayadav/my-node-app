@@ -37,11 +37,9 @@ pipeline {
 
         stage('Configure AWS Credentials') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    bat "aws eks update-kubeconfig --name %CLUSTER_NAME% --region %AWS_REGION%"
+                // Use AWS Credentials plugin
+                withAWS(credentials: 'aws-secret-access-key', region: "${AWS_REGION}") {
+                    bat "aws eks update-kubeconfig --name %CLUSTER_NAME%"
                 }
             }
         }
@@ -49,7 +47,7 @@ pipeline {
         stage('Deploy to EKS') {
             steps {
                 bat """
-                    kubectl set image deployment/my-node-app my-node-app=%DOCKERHUB_REPO%:%BUILD_NUMBER% --record || \
+                    kubectl set image deployment/my-node-app my-node-app=%DOCKERHUB_REPO%:%BUILD_NUMBER% --record || ^
                     kubectl apply -f k8s-deployment.yaml
                 """
             }
@@ -65,4 +63,5 @@ pipeline {
         }
     }
 }
+
 
