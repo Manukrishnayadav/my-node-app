@@ -2,10 +2,11 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')
-        DOCKERHUB_REPO = 'your-dockerhub-username/my-node-app'
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds') // Your DockerHub credentials ID
+        DOCKERHUB_REPO = 'manukrishnayadav/my-node-app'        // Docker Hub repo
         AWS_REGION = 'us-east-1'
         CLUSTER_NAME = 'my-eks-cluster'
+        IMAGE_TAG = "${BUILD_NUMBER}"                           // Jenkins build number as image tag
     }
 
     stages {
@@ -24,14 +25,14 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                bat "docker build -t %DOCKERHUB_REPO%:%BUILD_NUMBER% ."
+                bat "docker build -t %DOCKERHUB_REPO%:%IMAGE_TAG% ."
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
                 withDockerRegistry([credentialsId: 'dockerhub-creds', url: '']) {
-                    bat "docker push %DOCKERHUB_REPO%:%BUILD_NUMBER%"
+                    bat "docker push %DOCKERHUB_REPO%:%IMAGE_TAG%"
                 }
             }
         }
@@ -42,10 +43,15 @@ pipeline {
             }
         }
 
-        stage('Deploy to EKS') {
+        stage('Update Deployment YAML and Deploy to EKS') {
             steps {
-                bat "kubectl set image deployment/my-node-app my-node-app=%DOCKERHUB_REPO%:%BUILD_NUMBER% --record || kubectl apply -f k8s-deployment.yaml"
+                // Replace the image in k8s-deployment.yaml dynamically
+                bat """
+                powershell -Command "(Get-Content k8s-deployment.yaml) -replace 'image:.*', 'image: %DOCKERHUB_REPO%:%IMAGE_TAG%' | Set-Content k8s-deployment.yaml"
+                kubectl apply -f k8s-deployment.yaml
+                """
             }
         }
     }
 }
+
