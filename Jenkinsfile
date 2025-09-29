@@ -2,20 +2,21 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "manukrishnayadav/my-node-app:${BUILD_NUMBER}"
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')
+        DOCKERHUB_REPO = 'your-dockerhub-username/my-node-app'
+        AWS_REGION = 'us-east-1'
+        CLUSTER_NAME = 'my-eks-cluster'
     }
 
     stages {
         stage('Checkout Code') {
             steps {
-                // Pull code from GitHub
                 git branch: 'main', url: 'https://github.com/Manukrishnayadav/my-node-app.git'
             }
         }
 
         stage('Build & Test') {
             steps {
-                // CI: install dependencies and run tests
                 bat 'npm install'
                 bat 'npm test || echo No tests defined'
             }
@@ -23,28 +24,27 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                // Build Docker image locally
-                bat "docker build -t %IMAGE_NAME% ."
+                bat "docker build -t %DOCKERHUB_REPO%:%BUILD_NUMBER% ."
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
-                // CD: push image to Docker Hub
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    bat """
-                    echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin
-                    docker push %IMAGE_NAME%
-                    """
+                withDockerRegistry([credentialsId: 'dockerhub-creds', url: '']) {
+                    bat "docker push %DOCKERHUB_REPO%:%BUILD_NUMBER%"
                 }
+            }
+        }
+
+        stage('Configure Kubeconfig') {
+            steps {
+                bat "aws eks update-kubeconfig --name %CLUSTER_NAME% --region %AWS_REGION%"
             }
         }
 
         stage('Deploy to EKS') {
             steps {
-                // CD: deploy to Kubernetes (EKS)
-                bat "kubectl apply -f k8s-deployment.yaml"
-                bat "kubectl rollout status deployment/node-app-deployment"
+                bat "kubectl set image deployment/my-node-app my-node-app=%DOCKERHUB_REPO%:%BUILD_NUMBER% --record || kubectl apply -f k8s-deployment.yaml"
             }
         }
     }
